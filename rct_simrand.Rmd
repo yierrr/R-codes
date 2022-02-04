@@ -1,0 +1,464 @@
+---
+title: "pset3"
+output: pdf_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+
+## 1.1
+
+We'd estimate:
+
+$$
+score_i = \beta_0 + \beta_1 D_i + X_i' \gamma + \varepsilon
+$$
+
+where $X_i$ is a vector of controls.
+
+## 1.3
+Create a random sample of N = 1000 for beta = 0.1 and beta = 2 respectively
+```{r}
+set.seed(4321)
+err <- data.frame(rnorm(1000, mean=0, sd=2))
+number <- data.frame(1:1000)
+rand_key <- data.frame(runif(1000))
+names(rand_key) <- 'rand_key'
+names(err)<-'err'
+names(number) <- 'number'
+sample <- cbind(err,number,rand_key)
+```
+
+```{r}
+m <- median(as.numeric(rand_key$rand_key))
+sample <- sample%>%
+  mutate(D = case_when(rand_key > m ~ 1, 
+                       rand_key < m~ 0))
+nrow(sample%>%filter(D==1))/nrow(sample)
+nrow(sample%>%filter(D==0))/nrow(sample)
+```
+
+```{r}
+beta = 0.1
+sample <- sample%>%
+  mutate(Y1 = D*beta+err)
+
+beta = 2
+sample <- sample%>%
+  mutate(Y2 = D*beta+err)
+```
+
+## 1.4
+Calculate the p values and e
+```{r}
+#beta = 0.1
+ols1 <- lm(Y1~D, data = sample)
+p1 <- summary(ols1)$coefficients[2,4] 
+paste0("The p value is ",p1)
+b1 <- summary(ols1)$coefficients[2,1]
+paste0("The point estimate of beta is ", b1)
+```
+
+```{r}
+#beta = 2
+ols2 <- lm(Y2~D, data = sample)
+p2 <- summary(ols2)$coefficients[2,4] 
+paste0("The p value is ",p2)
+b2 <- summary(ols2)$coefficients[2,1]
+paste0("The point estimate of beta is ", b2)
+```
+
+
+## 1.5
+Individual level
+Rewrite in a function
+```{r}
+reg <- function(x){
+  res <- data.frame(0,0,0,0,0,0,0,0,0)[-1,]
+  for(i in 1:x){
+    err0 <- data.frame(rnorm(1000, mean=0, sd=2))
+    number0 <- data.frame(1:1000)
+    rand_key0 <- data.frame(runif(1000))
+    names(rand_key0) <- 'rand_key'
+    names(err0)<-'err'
+    names(number0) <- 'number'
+    sample0 <- cbind(err0,number0,rand_key0)
+    
+    m0 <- median(as.numeric(rand_key0$rand_key))
+    sample0 <- sample0%>%
+      mutate(D = case_when(rand_key0 > m0 ~ 1, 
+                           rand_key0 < m0~ 0))
+    
+    beta = 0.1
+    sample0 <- sample0%>%
+      mutate(Y1 = D*beta+err)
+    
+    beta = 2
+    sample0 <- sample0%>%
+      mutate(Y2 = D*beta+err)
+    
+    ef1 <- abs(mean((sample0%>%filter(D==1))$Y1)-mean((sample0%>%filter(D==0))$Y1))/sd(err0$err)
+    pwr1 <- ef1*sqrt(1000/var(err0$err))*sqrt(0.5*(1-0.5))-0.05
+    #print(pwr1)
+    ef2 <- abs(mean((sample0%>%filter(D==1))$Y2)-mean((sample0%>%filter(D==0))$Y2))/sd(err0$err)
+    pwr2 <- ef2*sqrt(1000/var(err0$err))*sqrt(0.5*(1-0.5))-0.05
+    
+    ols01 <- lm(Y1~D, data = sample0)
+    p01 <- summary(ols01)$coefficients[2,4] 
+    b01 <- summary(ols01)$coefficients[2,1]
+    
+    ols02 <- lm(Y2~D, data = sample0)
+    p02 <- summary(ols02)$coefficients[2,4] 
+    b02 <- summary(ols02)$coefficients[2,1]
+    
+    row <- c(i,p01,p02,b01,b02,ef1,pwr1,ef2,pwr2)
+    res <- rbind(res,row)
+  }
+  names(res) <- c('num','p1','p2','b1','b2','ef1','pwr1','ef2','pwr2')
+  return(res)
+}
+
+
+plot_l <- function(data){
+  p <- data%>%
+    ggplot() +
+    geom_histogram(aes(x = p1),stat='density')+
+    labs(title = 'beta = 0.1')+
+    xlab('p-value')+
+    ylab('density')
+  
+  p
+}
+
+plot_h <- function(data){
+  p <- data%>%
+    ggplot() +
+    geom_histogram(aes(x = p2),stat='density')+
+    labs(title = 'beta = 2')+
+    xlab('p-value')+
+    ylab('density')
+  
+  p
+}
+```
+
+Repeat for 50 times
+```{r}
+res <- reg(50)
+plot_l(res)
+plot_h(res) +
+  geom_vline(xintercept = c(0, 1), linetype = "longdash") + 
+    scale_x_log10()  +
+  labs(caption = "Note: x-axis on log scale since p-values so small.")
+
+  
+```
+
+## 1.6 
+Repeat for 500 times
+```{r}
+res <- reg(500)
+plot_l(res)
+plot_h(res) +
+    geom_vline(xintercept = c(0, 1), linetype = "longdash") + 
+    scale_x_log10()  +
+  labs(caption = "Note: x-axis on log scale since p-values so small.")
+
+```
+
+## 1.8
+School level low ICC
+```{r}
+reg_l <- function(x){
+  res <- data.frame(0,0,0,0,0,0,0,0,0)[-1,]
+  for(i in 1:x){
+    err0 <- data.frame(rnorm(1000, mean=0, sd=2))
+    number0 <- data.frame(1:1000)
+    rand_key0 <- data.frame(runif(1000))
+    names(rand_key0) <- 'rand_key'
+    names(err0)<-'err'
+    names(number0) <- 'number'
+    sample0 <- cbind(err0,number0,rand_key0)
+    sample0 <- sample0[order(sample0$rand_key),]
+    sample0 <- sample0%>%mutate(school_rand_key = 999)
+    for(j in 1:20){
+      m_lb = j*50-49
+      m_ub = 50*j
+      rand = runif(1)
+      for(m in m_lb:m_ub){
+        sample0[m,4] = rand
+      }
+      
+    }
+    sample0 <- sample0[order(sample0$school_rand_key),]
+    trt = runif(1)
+    if(trt>0.5){
+      sample0 <- sample0%>%
+      mutate(D=c(rep(1,500),rep(0,500)))
+    }else{sample0 <- sample0%>%
+      mutate(D=c(rep(0,500),rep(1,500)))}
+
+    beta = 0.1
+    sample0 <- sample0%>%
+      mutate(Y1 = D*beta+err)
+    
+    beta = 2
+    sample0 <- sample0%>%
+      mutate(Y2 = D*beta+err)
+    
+    sample0 <- sample0%>%
+      group_by(school_rand_key)%>%
+      mutate(avg1 = mean(Y1))%>%
+      mutate(avg2 = mean(Y2))%>%
+      mutate(err00 = mean(err))%>%
+      ungroup()
+    
+    new_sample <- sample0%>%
+      select(avg1,avg2,D,err00)
+    new_sample <- unique(new_sample)
+    
+    ef1 <- abs(mean((new_sample%>%filter(D==1))$avg1)-mean((new_sample%>%filter(D==0))$avg1))
+    pwr1 <- ef1*sqrt(20/var(new_sample$err00))*sqrt(0.5*(1-0.5))-0.05
+    
+    ef2 <- abs(mean((new_sample%>%filter(D==1))$avg2)-mean((new_sample%>%filter(D==0))$avg2))
+    pwr2 <- ef2*sqrt(20/var(new_sample$err00))*sqrt(0.5*(1-0.5))-0.05
+
+    
+    ols01 <- lm(avg1~D, data = new_sample)
+    p01 <- summary(ols01)$coefficients[2,4] 
+    b01 <- summary(ols01)$coefficients[2,1]
+    
+    ols02 <- lm(avg2~D, data = new_sample)
+    p02 <- summary(ols02)$coefficients[2,4] 
+    b02 <- summary(ols02)$coefficients[2,1]
+    
+    row <- c(i,p01,p02,b01,b02,ef1,pwr1,ef2,pwr2)
+    res <- rbind(res,row)
+  }
+  names(res) <- c('num','p1','p2','b1','b2','ef1','pwr1','ef2','pwr2')
+  return(res)
+}
+
+```
+
+```{r}
+res_school1 <- reg_l(50)
+plot_l(res_school1)
+plot_h(res_school1) +
+    geom_vline(xintercept = c(0, 1), linetype = "longdash") + 
+    scale_x_log10()  +
+  labs(caption = "Note: x-axis on log scale since p-values so small.")
+
+```
+
+```{r}
+res_school1 <- reg_l(500)
+plot_l(res_school1)
+plot_h(res_school1) +
+    geom_vline(xintercept = c(0, 1), linetype = "longdash") + 
+    scale_x_log10()  +
+  labs(caption = "Note: x-axis on log scale since p-values so small.")
+
+```
+
+# 1.9
+School level high ICC
+```{r}
+reg_h <- function(x){
+  res <- data.frame(0,0,0,0,0,0,0,0,0)[-1,]
+  for(i in 1:x){
+    err0 <- data.frame(rnorm(1000, mean=0, sd=2))
+    number0 <- data.frame(1:1000)
+    rand_key0 <- data.frame(runif(1000))
+    names(rand_key0) <- 'rand_key'
+    names(err0)<-'err'
+    names(number0) <- 'number'
+    sample0 <- cbind(err0,number0,rand_key0)
+    sample0 <- sample0[order(sample0$err),]
+    sample0 <- sample0%>%mutate(school_rand_key = 999)
+    for(j in 1:20){
+      m_lb = j*50-49
+      m_ub = 50*j
+      rand = runif(1)
+      for(m in m_lb:m_ub){
+        sample0[m,4] = rand
+      }
+      
+    }
+    sample0 <- sample0[order(sample0$school_rand_key),]
+    trt = runif(1)
+    if(trt>0.5){
+      sample0 <- sample0%>%
+      mutate(D=c(rep(1,500),rep(0,500)))
+    }else{sample0 <- sample0%>%
+      mutate(D=c(rep(0,500),rep(1,500)))}
+
+    beta = 0.1
+    sample0 <- sample0%>%
+      mutate(Y1 = D*beta+err)
+    
+    beta = 2
+    sample0 <- sample0%>%
+      mutate(Y2 = D*beta+err)
+    
+    sample0 <- sample0%>%
+      group_by(school_rand_key)%>%
+      mutate(avg1 = mean(Y1))%>%
+      mutate(avg2 = mean(Y2))%>%
+      mutate(err00 = mean(err))%>%
+      ungroup()
+    
+    new_sample <- sample0%>%
+      select(avg1,avg2,D,err00)
+    new_sample <- unique(new_sample)
+    
+    ef1 <- abs(mean((new_sample%>%filter(D==1))$avg1)-mean((new_sample%>%filter(D==0))$avg1))
+    pwr1 <- ef1*sqrt(20/var(new_sample$err00))*sqrt(0.5*(1-0.5))-0.05
+    
+    ef2 <- abs(mean((new_sample%>%filter(D==1))$avg2)-mean((new_sample%>%filter(D==0))$avg2))
+    pwr2 <- ef2*sqrt(20/var(new_sample$err00))*sqrt(0.5*(1-0.5))-0.05
+
+    
+    ols01 <- lm(avg1~D, data = new_sample)
+    p01 <- summary(ols01)$coefficients[2,4] 
+    b01 <- summary(ols01)$coefficients[2,1]
+    
+    ols02 <- lm(avg2~D, data = new_sample)
+    p02 <- summary(ols02)$coefficients[2,4] 
+    b02 <- summary(ols02)$coefficients[2,1]
+    
+    row <- c(i,p01,p02,b01,b02,ef1,pwr1,ef2,pwr2)
+    res <- rbind(res,row)
+  }
+  names(res) <- c('num','p1','p2','b1','b2','ef1','pwr1','ef2','pwr2')
+  return(res)
+}
+
+```
+
+#
+```{r}
+res_school2 <- reg_h(50)
+plot_l(res_school2)
+plot_h(res_school2)
+```
+
+```{r}
+res_school2 <- reg_h(500)
+plot_l(res_school2)
+plot_h(res_school2)
+```
+
+
+
+# 1.10
+
+Using the formula from lectures:
+
+$$
+\frac{\text{EffectSize}}{\sqrt{1 + \rho(m-1)}} = (t_{1-\kappa} + t_\alpha) \times \sqrt{\frac{1}{P(1-P)}}  \times \sqrt{\frac{\sigma^2}{N}} 
+$$
+
+Therefore, we'd expect to need larger sample sizes for a given power level when we use the clustered design. This is because we observe fewer randomized units - the clustered design is essentially akin to observing one unit per cluster where each cluster averages across individuals within the cluster.
+
+The formula to calculate intra-cluster correlation is:
+
+$$
+\rho = \frac{\tau^2}{\sigma^2 + \tau^2}
+$$
+where $\tau^2$ denotes within-cluster variance and $\sigma^2$ denotes between-cluster variance.
+
+The first cluster design essentially has 0 intra-cluster correlation since individuals are assigned to a cluster at random. However, in the sample we'll never observe a correlation of 0 so for a given power level we'd need a larger sample.
+
+In the second design, we order individuals by their outcome $y_i$ so we'd expect a high intra-cluster correlation and need a much larger sample size.
+
+
+```{r}
+
+gen_data = function(N = 1000, beta = 0.1){
+  D = rbernoulli(N, p = 0.5)
+  Y = beta * D + rnorm(N, 0, 4)
+  df = tibble("D" = D, "Y" = Y)
+  return(df)
+}
+
+assign_cluster = function(df, cluster_assignment = "random"){
+  if (cluster_assignment == "random") {
+    df$cluster = sample(1:20, nrow(df), replace = TRUE)
+  }
+  if (cluster_assignment == "ordered") {
+    df = arrange(df, -Y)
+    df$cluster = rep(1:20, each = nrow(df)/20)
+  } 
+  return(df)
+}
+
+
+calculate_ICC = function(df){
+  anova_fit = aov(Y ~ factor(cluster), data = df)
+  anova_summ = summary(anova_fit)[[1]]
+  ICC = anova_summ[1, 2] / sum(anova_summ[, 2])
+  return(ICC)
+}
+
+
+
+anon_function = function(x, beta = 0.1){
+  sim_df = gen_data(beta = beta)
+  random_cluster_df = assign_cluster(sim_df, "random")
+  ordered_cluster_df = assign_cluster(sim_df, "ordered")
+  ICC_random = calculate_ICC(random_cluster_df)
+  ICC_ordered = calculate_ICC(ordered_cluster_df)
+  res_df = tibble(
+    "ICC_random" = ICC_random,
+    "ICC_ordered" = ICC_ordered,
+    "draw" = x
+  ) 
+  return(res_df)
+}
+
+
+
+simulated_draws_small = 1:500 %>% 
+    map_dfr(anon_function, beta = 0.1) %>% 
+  mutate(beta = 0.1)
+
+simulated_draws_big = 1:500 %>% 
+    map_dfr(anon_function, beta = 2) %>% 
+  mutate(beta = 2)
+
+simulated_draws = bind_rows(
+  simulated_draws_small,
+  simulated_draws_big
+)
+
+simulated_draws_long = simulated_draws %>% 
+  pivot_longer(c(ICC_random, ICC_ordered), names_to = "ICC_type") %>% 
+  mutate(beta = factor(beta))
+
+ICC_summ = simulated_draws_long %>% 
+  group_by(ICC_type) %>% 
+  summarise(mean_value = mean(value))
+
+simulated_draws_long %>% 
+  ggplot(aes(
+    x = value,
+    fill = beta
+  )) +
+  geom_histogram(colour = "white", bins = 60) +
+  facet_wrap(~ICC_type, scales = "free") +
+  theme_bw()  +
+  theme(legend.position = "bottom") +
+  labs(title = "ICC for Ordered and Random Clusters")
+
+
+
+
+
+
+```
+
+
