@@ -1,0 +1,96 @@
+---
+title: "Pset1_2"
+output:
+  pdf_document: default
+  html_document: default
+---
+(a-c)
+```{r}
+#install.packages("AER")
+library(AER)
+data(TravelMode)
+data <- TravelMode
+```
+
+(d)
+```{r}
+library(tidyverse)
+Y <- data%>%select(mode,choice)%>%
+  filter(mode=='air')%>%
+  mutate(Y =case_when(choice == 'yes'~1, 
+                      choice == 'no'~0))
+Y <- as.vector(Y$Y)
+
+head(Y)
+```
+
+(e)
+```{r}
+X <- data%>%select(mode,vcost)%>%
+  filter(mode=='air')%>%
+  mutate(X =vcost/100)
+X <- as.vector(X$X)
+
+head(X)
+```
+
+(f)
+```{r}
+#library(stats)
+loglik <- function(beta){
+  #cdf
+  phi <- pnorm(X*beta)
+  loglik = (t(Y)%*%log(phi)+t(1-Y)%*%log(1-phi))
+  return(loglik) 
+}
+
+foc <- function(beta){
+  phi <- pnorm(X*beta)
+  foc <- t(dnorm(X*beta)*(Y-phi)*X)%*%(1/(phi*(1-phi)))
+  return(foc)
+}
+
+soc <- function(beta){
+  
+  phi <- pnorm(X*beta)
+  A <- ((Y*(dnorm(beta*X)+beta*X*phi))/(phi^2)
+        +(1-Y)*(dnorm(beta*X)-beta*X*(1-phi)))
+  B <- dnorm(X*beta)*(X^2)
+  soc <- -t(A)%*%B
+  return(soc)
+}
+
+```
+
+(g)
+```{r}
+curve(Vectorize(loglik)(x), -3, 3, xlab = 'beta',ylab='log likelihood')
+curve(Vectorize(foc)(x), -3, 3, xlab = 'beta',ylab='derivative of log likelihood')
+```
+
+(h)
+```{r}
+diff <- 1
+beta0 <- 1
+betas <- c()
+betas <- rbind(betas,beta0)
+while(diff>0.00001){
+  beta_prev = betas[nrow(betas),1]
+  beta_new <- beta_prev - foc(beta_prev)/soc(beta_prev)
+  betas <- rbind(betas,beta_new)
+  diff <- abs(beta_new-beta_prev)
+  print(beta_new)
+}
+
+beta_mle <- betas[nrow(betas),1]
+beta_mle
+
+```
+The mle estimator is -0.5021356.
+
+(i)
+```{r}
+ME <- function(X){pnorm(X*beta_mle)*beta_mle}
+curve(Vectorize(ME)(x), -10,10, xlab = 'X',ylab='Estimated Marginal Effect')
+```
+
