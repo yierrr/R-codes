@@ -1,0 +1,208 @@
+---
+title: "IV"
+---
+```{r}
+library(tidyverse)
+library(haven)
+```
+
+Specification 1: Included instruments: none; Excluded instruments: nearc4 2SLS
+
+```{r}
+#2SLS
+card <- read_dta('card.dta')
+head(card)
+
+xmat <- data.matrix(data.frame(rep(1,nrow(card)),card$educ))
+zmat <- data.matrix(data.frame(rep(1,nrow(card)),card$nearc4))
+Pz <- zmat%*%solve(t(zmat)%*%zmat)%*%t(zmat)
+
+card <- cbind(card,rep(1,nrow(card)))
+colnames(card)[35] <- 'cons'
+beta1 <- solve(t(zmat)%*%zmat)%*%t(zmat)%*%xmat
+PzX <- Pz%*%xmat
+card <- cbind(card,PzX)
+pi_1 <- solve(t(xmat)%*%Pz%*%xmat)%*%t(xmat)%*%Pz%*%card$lwage
+beta_2sls <- solve(t(xmat)%*%Pz%*%xmat)%*%t(xmat)%*%Pz%*%card$lwage
+beta_2sls
+```
+
+```{r}
+u_hat <- (log(card['wage']) - xmat%*%beta_2sls)
+colnames(u_hat) <- 'u_hat'
+u_hat <- as.vector(u_hat$u_hat)
+sigma_hat <- (t(u_hat) %*% u_hat)/nrow(card)
+sigma_hat <- sigma_hat[1,]
+vhom <- nrow(card) * as.numeric(t(u_hat) %*% u_hat) * solve((t(xmat) %*% PzX))
+vhom <- vhom[2,2]
+conf <- sqrt(vhom)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_2sls-conf
+confint_high <- beta_2sls+conf
+confint_low[2,1]
+confint_high[2,1]
+```
+The 2SLS estimate is around 0.1880626, and the confidence interval is given by (-2.638117,3.014242).
+
+```{r}
+#OGMM
+uz <- as.matrix(cbind(u_hat*zmat[,1],u_hat*zmat[,2]))
+omega_hat <-t(uz)%*%uz/nrow(card)
+beta_hat <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)%*%t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%log(card$wage)
+colnames(beta_hat)[1] <- 'beta_hat'
+beta_hat <- beta_hat[2,1]
+vhet <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)*(nrow(card)^2)
+vhet <- vhet[2,2]
+conf <- sqrt(vhet)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_hat-conf
+confint_high <- beta_hat+conf
+
+print(paste0("The OGMM estimate is the around ",beta_hat, ", and the confidence interval is given by (", confint_low, ", ", confint_high, ")"))
+```
+
+---------------------
+Specification 2:Included instruments: south, smsa;Excluded instruments: nearc4 
+
+```{r}
+#2SLS
+card <- read_dta('card.dta')
+
+xmat <- data.matrix(data.frame(rep(1,nrow(card)),card$educ,card$south,card$smsa))
+zmat <- data.matrix(data.frame(rep(1,nrow(card)),card$nearc4,card$south,card$smsa))
+Pz <- zmat%*%solve(t(zmat)%*%zmat)%*%t(zmat)
+PzX <- Pz%*%xmat
+
+beta_2sls <- solve(t(xmat)%*%Pz%*%xmat)%*%t(xmat)%*%Pz%*%card$lwage
+u_hat <- (log(card['wage']) - xmat%*%beta_2sls)
+colnames(u_hat) <- 'u_hat'
+u_hat <- as.vector(u_hat$u_hat)
+sigma_hat <- (t(u_hat) %*% u_hat)/nrow(card)
+sigma_hat <- sigma_hat[1,]
+vhom <- nrow(card) * as.numeric(t(u_hat) %*% u_hat) * solve((t(xmat) %*% PzX))
+vhom <- vhom[2,2]
+conf <- sqrt(vhom)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_2sls[2,1]-conf
+confint_high <- beta_2sls[2,1]+conf
+
+beta_2sls[2,1]
+confint_low
+confint_high
+```
+The 2SLS estimate is around 0.1358036, and the confidence interval is given by (-6.152934,6.424541)
+
+```{r}
+#OGMM
+uz <- as.matrix(cbind(u_hat*zmat[,1],u_hat*zmat[,2],u_hat*zmat[,3],u_hat*zmat[,4]))
+omega_hat <-t(uz)%*%uz/nrow(card)
+beta_hat <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)%*%t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%log(card$wage)
+beta_hat <- beta_hat[2,1]
+vhet <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)*(nrow(card)^2)
+vhet <- vhet[2,2]
+conf <- sqrt(vhet)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_hat-conf
+confint_high <- beta_hat+conf
+
+print(paste0("The OGMM estimate is the around ",beta_hat, ", and the confidence interval is given by (", confint_low, ", ", confint_high, ")"))
+```
+
+---------------------
+Specification 3: Included instruments: south,smsa; Excluded instruments: nearc4, nearc2
+
+```{r}
+#2SLS
+card <- read_dta('card.dta')
+
+xmat <- data.matrix(data.frame(rep(1,nrow(card)),card$educ,card$south,card$smsa))
+zmat <- data.matrix(data.frame(rep(1,nrow(card)),card$nearc4,card$south,card$smsa,card$nearc2))
+Pz <- zmat%*%solve(t(zmat)%*%zmat)%*%t(zmat)
+PzX <- Pz%*%xmat
+
+beta_2sls <- solve(t(xmat)%*%Pz%*%xmat)%*%t(xmat)%*%Pz%*%card$lwage
+u_hat <- (log(card['wage']) - xmat%*%beta_2sls)
+colnames(u_hat) <- 'u_hat'
+u_hat <- as.vector(u_hat$u_hat)
+sigma_hat <- (t(u_hat) %*% u_hat)/nrow(card)
+sigma_hat <- sigma_hat[1,]
+vhom <- nrow(card) * as.numeric(t(u_hat) %*% u_hat) * solve((t(xmat) %*% PzX))
+vhom <- vhom[2,2]
+conf <- sqrt(vhom)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_2sls[2,1]-conf
+confint_high <- beta_2sls[2,1]+conf
+
+beta_2sls[2,1]
+confint_low
+confint_high
+```
+The 2SLS estimate is around 0.128609, and the confidence interval is given by (-6.020938,6.278156).
+
+```{r}
+#OGMM
+uz <- as.matrix(cbind(u_hat*zmat[,1],u_hat*zmat[,2],u_hat*zmat[,3],u_hat*zmat[,4],u_hat*zmat[,5]))
+omega_hat <-t(uz)%*%uz/nrow(card)
+beta_hat <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)%*%t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%log(card$wage)
+beta_hat <- beta_hat[2,1]
+vhet <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)*(nrow(card)^2)
+vhet <- vhet[2,2]
+conf <- sqrt(vhet)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_hat-conf
+confint_high <- beta_hat+conf
+
+print(paste0("The OGMM estimate is the around ",beta_hat, ", and the confidence interval is given by (", confint_low, ", ", confint_high, ")"))
+```
+
+---------------------
+Specification 4: Included instruments: south, smsa, libcrd14, IQ, KWW, exper, expersq; Excluded instruments:nearc4, nearc2. 2SLS
+```{r}
+#2SLS
+card <- read_dta('card.dta')
+
+# replacing NA with column mean value
+card$educ[is.na(card$educ)] <- mean(card$educ, na.rm = TRUE)
+card$south[is.na(card$south)] <- mean(card$south, na.rm = TRUE)
+card$smsa[is.na(card$smsa)] <- mean(card$smsa, na.rm = TRUE)
+card$libcrd14[is.na(card$libcrd14)] <- mean(card$libcrd14, na.rm = TRUE)
+card$IQ[is.na(card$IQ)] <- mean(card$IQ, na.rm = TRUE)
+card$KWW[is.na(card$KWW)] <- mean(card$KWW, na.rm = TRUE)
+card$exper[is.na(card$exper)] <- mean(card$exper, na.rm = TRUE)
+card$expersq[is.na(card$expersq)] <- mean(card$expersq, na.rm = TRUE)
+card$nearc4[is.na(card$nearc4)] <- mean(card$nearc4, na.rm = TRUE)
+card$nearc2[is.na(card$nearc2)] <- mean(card$nearc2, na.rm = TRUE)
+
+xmat <- data.matrix(data.frame(rep(1,nrow(card)),card$educ,card$south,card$smsa,card$libcrd14,card$IQ,card$KWW,card$exper,card$expersq))
+zmat <- data.matrix(data.frame(rep(1,nrow(card)),card$nearc4,card$south,card$smsa,card$libcrd14,card$IQ,card$KWW,card$exper,card$expersq,card$nearc2))
+
+Pz <- zmat%*%solve(t(zmat)%*%zmat)%*%t(zmat)
+PzX <- Pz%*%xmat
+
+beta_2sls <- solve(t(xmat)%*%Pz%*%xmat)%*%t(xmat)%*%Pz%*%card$lwage
+u_hat <- (log(card['wage']) - xmat%*%beta_2sls)
+colnames(u_hat) <- 'u_hat'
+u_hat <- as.vector(u_hat$u_hat)
+sigma_hat <- (t(u_hat) %*% u_hat)/nrow(card)
+sigma_hat <- sigma_hat[1,]
+vhom <- nrow(card) * as.numeric(t(u_hat) %*% u_hat) * solve((t(xmat) %*% PzX))
+vhom <- vhom[2,2]
+conf <- sqrt(vhom)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_2sls[2,1]-conf
+confint_high <- beta_2sls[2,1]+conf
+
+beta_2sls[2,1]
+confint_low
+confint_high
+```
+The 2SLS estimate is around 0.220293, and the confidence interval is given by (-13.8365, 14.27708).
+
+```{r}
+#OGMM
+uz <- as.matrix(cbind(u_hat*zmat[,1],u_hat*zmat[,2],u_hat*zmat[,3],u_hat*zmat[,4],u_hat*zmat[,5],u_hat*zmat[,6],u_hat*zmat[,7],u_hat*zmat[,8],u_hat*zmat[,9],u_hat*zmat[,10]))
+omega_hat <-t(uz)%*%uz/nrow(card)
+beta_hat <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)%*%t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%log(card$wage)
+beta_hat <- beta_hat[2,1]
+vhet <- solve(t(xmat)%*%zmat%*%solve(omega_hat)%*%t(zmat)%*%xmat)*(nrow(card)^2)
+vhet <- vhet[2,2]
+conf <- sqrt(vhet)/sqrt(nrow(card))*qnorm(0.975)
+confint_low <- beta_hat-conf
+confint_high <- beta_hat+conf
+
+print(paste0("The OGMM estimate is the around ",beta_hat, ", and the confidence interval is given by (", confint_low, ", ", confint_high, ")"))
+```
+
