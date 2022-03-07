@@ -1,0 +1,88 @@
+---
+title: "pset3"
+output:
+  pdf_document: default
+  html_document: default
+---
+a)
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(stats)
+library(comprehenr)
+data <- read.delim('flowers.txt')
+data <- data%>%select(price,bidders,type1,type2)
+d1 <- data%>%filter(type1==1)
+d2 <- data%>%filter(type2==1)
+```
+
+b)
+Borrowing from the lecture, the likelihood function is $L(\theta | B_1, ..., B_N) = \Pi_{i = 1,..,N} \frac{n_i}{(n_i - 1)\theta_i}\mathbf{1}(B_i \leq \frac{n_i-1}{n_i}\theta_i)$
+
+c)
+```{r}
+lik <- function(theta){
+  B <- as.matrix(data$price)
+  N <- as.matrix(data$bidders)
+  
+  theta_col <- as.matrix(data%>%mutate(theta_c = ifelse(type1==1,theta[1],theta[2]))
+    %>%select(theta_c))
+  
+  indicator <- (N-1)*theta_col/N-B
+  indicator <- ifelse(indicator>=0,1,0)
+  l <- N*indicator/((N-1)*theta_col)
+  lik <- prod(as.vector(l))
+  return(lik) 
+}
+```
+
+d)
+```{r}
+# fixing theta2 = 327
+theta1 <- seq(from=326,to=327,by=0.0001)
+
+d327 <- data.frame(matrix(nrow = 0,ncol=1))
+for(t in theta1){
+  l <- lik(c(t,327))
+  d327 <- rbind(d327,l)
+}
+
+d327 <- cbind(d327,theta1)
+colnames(d327) <- c('likelihood','theta1')
+
+ggplot(d327, aes(x=theta1, y=likelihood)) +
+  geom_point(size=0.05)
+```
+e)
+As can be seen in both the equation and the plot, $\theta^*$ needs to maximize $L(\theta | B_1, ..., B_N) = \Pi_{i = 1,..,N} \frac{n_i}{(n_i - 1)\theta_i}\mathbf{1}(B_i \leq \frac{n_i-1}{n_i}\theta_i)$, i.e., make  $\frac{n_i}{(n_i - 1)\theta_i}$ large as possible while keeping $B_i \leq \frac{n_i-1}{n_i}\theta_i$. Consequently, the $\theta^*$ is obtained at $\frac{max(B_i)min(n_i)}{min(n_i)-1}$.
+
+f)
+```{r}
+max <- d1%>%filter(price == max(price))%>%select(price,bidders)
+max <- max%>%filter(bidders==min(max$bidders))
+analytical <- max$price*max$bidders/(max$bidders-1)
+print(analytical)
+
+# examining only theta1
+# rewrite lik() to fix theta 2
+lik1 <- function(t){
+  theta <- c(t,327)
+  B <- as.matrix(data$price)
+  N <- as.matrix(data$bidders)
+  
+  theta_col <- as.matrix(data%>%mutate(theta_c = ifelse(type1==1,theta[1],theta[2]))
+    %>%select(theta_c))
+  
+  indicator <- (N-1)*theta_col/N-B
+  indicator <- ifelse(indicator>=0,1,0)
+  l <- N*indicator/((N-1)*theta_col)
+  lik <- prod(as.vector(l))
+  return(lik) 
+}
+
+mle <- optimize(lik1,c(326,327))$minimum
+print(mle)
+
+```
+
+Both the analytical result and estimate by R are close to 326 and close to each other, corresponding to the cutoff in the plot. However, according to the plot where the cutoff happens slightly above 326.5, the analytical result was the closest.
