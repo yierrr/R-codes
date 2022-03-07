@@ -1,0 +1,177 @@
+---
+title: "Pset2"
+output: pdf_document
+---
+```{r}
+library(tidyverse)
+library(haven)
+library(MASS)
+library(ggplot2)
+data <- read_dta('jtrain98.dta')
+data <- cbind(rep(1,nrow(data)),data)
+colnames(data)[1] <- 'cons'
+```
+
+1c
+```{r}
+#get OLS estimates
+y1 <- as.matrix(data%>%filter(train==1)%>%dplyr::select(earn98))
+x1 <- as.matrix(data%>%filter(train==1)%>%
+                    dplyr::select(cons,earn96,educ,age,married))
+beta <- solve(t(x1)%*%x1)%*%t(x1)%*%y1
+beta1 <- beta[2:length(beta)]
+
+y0 <- as.matrix(data%>%filter(train==0)%>%dplyr::select(earn98))
+x0 <- as.matrix(data%>%filter(train==0)%>%
+                    dplyr::select(cons,earn96,educ,age,married))
+beta <- solve(t(x0)%*%x0)%*%t(x0)%*%y0
+beta0 <- beta[2:length(beta)]
+
+#ATE calculation function
+ATE <- function(data){
+  Y1 <- as.matrix(data%>%filter(train==1)%>%dplyr::select(earn98))
+  Y0 <- as.matrix(data%>%filter(train==0)%>%dplyr::select(earn98))
+  
+  X1 <- as.matrix(data%>%filter(train==1)%>%
+                    dplyr::select(earn96,educ,age,married))
+  X0 <- as.matrix(data%>%filter(train==0)%>%
+                    dplyr::select(earn96,educ,age,married))
+  
+  N1 <- length(Y1)
+  N0 <- length(Y0)
+  N <- N1+N0
+  
+  ate <- mean(Y1)-mean(Y0)-t(colMeans(X1)-colMeans(X0))%*%
+    (N0*beta1/N+N1*beta0/N)
+  return(ate)
+}
+
+#Bootstrapping
+ate_df <- data.frame(matrix(ncol = 1, nrow = 0))
+for(i in 1:2000){
+  ind <- sample(1:nrow(data),nrow(data), replace=TRUE)
+  new_data <- data[ind,]
+  ate <- ATE(new_data)
+  ate_df <- rbind(ate_df,ate)
+}
+colnames(ate_df) <- 'ATE'
+sd(ate_df$ATE)
+```
+The standard error from pset1 is about 0.586, which is larger than this bootstrapped standard error.
+
+------------------------------------------------
+4e
+```{r}
+mu <- c(0,0)
+omega <- matrix(c(1,0.99,0.99,1),nrow=2)
+
+pi_set <- c(0,sqrt(0.25)/sqrt(500),sqrt(10)/sqrt(500),sqrt(100)/sqrt(500))
+
+reg <- function(p){
+    uv <- mvrnorm(500,mu,omega)
+    y <- uv[,1]
+    x <- uv[,2]+p
+    beta <- sum(y)/sum(x)
+    
+    num <- sqrt(500)*beta
+    denom <- sqrt(var(y)/((p)^2))
+    
+    #calculate normal t-test assuming strong instrument
+    t <- abs(num/denom)
+    rej <- ifelse(t>qnorm(0.975),1,0)
+    
+    #using ivreg package for t-test
+    ivreg_t <- abs(summary(ivreg(y~0 + x|0 + 1))$coeff[1,3])
+    ivreg_rej <- ifelse(t>qnorm(0.975),1,0)
+    
+    #AR test with u_hat
+    uhat <- y-x*beta
+    gamma <- sum(uhat)/500
+    Vhat <- var(uhat)
+    ar <- abs(sqrt(500)*gamma/sqrt(Vhat))
+    #the test with normal distribution is the same
+    #as squared test-statistic compared to
+    #chi-square distribution
+    rej_ar <- ifelse(ar>qnorm(0.975),1,0)
+    
+    #AR test with actual beta=0
+    uhat0 <- y
+    gamma0 <- sum(uhat0)/500
+    Vhat0 <- var(uhat0)
+    ar0 <- abs(sqrt(500)*gamma0/sqrt(Vhat0))
+    rej_ar0 <- ifelse((ar0)^2>qchisq(.95,df=499,lower.tail = FALSE),1,0)
+
+    entry <- c(p,(p*sqrt(500))^2,beta,rej,t,rej_ar,ar,gamma,ivreg_t,ivreg_rej,rej_ar0,ar0)
+    return(entry)
+}
+
+results <- data.frame(matrix(ncol=12,nrow=0))
+
+for(p in pi_set){
+  for(i in 1:10000){
+    entry <- reg(p)
+    results <- rbind(results,entry)
+  }
+}
+
+colnames(results) <-c('pi','param','beta','rej',
+                      't','rej_ar','ar','gamma',
+                      'ivreg_t','ivreg_rej',
+                      'rej_ar0','ar0')
+```
+
+```{r}
+beta0 <- data.frame(results%>%filter(param==0)%>%dplyr::select(beta))
+beta25 <- data.frame(results%>%filter(param==0.25)%>%dplyr::select(beta))
+#param==10 somehow does not work
+beta10 <- data.frame(results%>%filter(param>9 & param<11)%>%dplyr::select(beta))
+beta100 <- data.frame(results%>%filter(param==100)%>%dplyr::select(beta))
+
+ggplot() +
+  geom_density(aes(beta, fill = "concentration=0"), alpha = .2, data = beta0) +
+  geom_density(aes(beta, fill = "concentration=0.25"), alpha = .2, data =beta25) +
+  geom_density(aes(beta, fill = "concentration=10"), alpha = .2, data =beta10)+
+  geom_density(aes(beta, fill = "concentration=100"), alpha = .2, data =beta100)+
+  xlim(-2,4)
+```
+
+------------------------------
+4(g)
+```{r}
+#t-test
+rej0 <- nrow(results%>%filter(param==0 & rej == 1))/nrow(results%>%filter(param==0))
+rej25 <- nrow(results%>%filter(param==0.25 & rej == 1))/nrow(results%>%filter(param==0.25))
+rej10 <- nrow(results%>%filter((param>9 & param < 11) & rej == 1))/nrow(results%>%filter(param>9 & param < 11))
+rej100 <- nrow(results%>%filter(param==100 & rej == 1))/nrow(results%>%filter(param==100))
+
+print(rbind(rej0,rej25,rej10,rej100))
+
+#ivreg t_test
+ivreg_rej0 <- nrow(results%>%filter(param==0 & ivreg_rej == 1))/nrow(results%>%filter(param==0))
+ivreg_rej25 <- nrow(results%>%filter(param==0.25 & ivreg_rej == 1))/nrow(results%>%filter(param==0.25))
+ivreg_rej10 <- nrow(results%>%filter((param>9 & param < 11) & ivreg_rej == 1))/nrow(results%>%filter(param>9 & param < 11))
+ivreg_rej100 <- nrow(results%>%filter(param==100 & ivreg_rej == 1))/nrow(results%>%filter(param==100))
+
+print(rbind(ivreg_rej0,ivreg_rej25,ivreg_rej10,ivreg_rej100))
+
+#AR test
+rej_ar0 <- nrow(results%>%filter(param==0 & rej_ar == 1))/nrow(results%>%filter(param==0))
+rej_ar25 <- nrow(results%>%filter(param==0.25 & rej_ar == 1))/nrow(results%>%filter(param==0.25))
+rej_ar10 <- nrow(results%>%filter((param>9 & param < 11) & rej_ar == 1))/nrow(results%>%filter(param>9 & param < 11))
+rej_ar100 <- nrow(results%>%filter(param==100 & rej_ar == 1))/nrow(results%>%filter(param==100))
+
+print(rbind(rej_ar0,rej_ar25,rej_ar10,rej_ar100))
+
+#AR test with actual beta=0
+rej_ar00 <- nrow(results%>%filter(param==0 & rej_ar0 == 1))/nrow(results%>%filter(param==0))
+rej_ar025 <- nrow(results%>%filter(param==0.25 & rej_ar0 == 1))/nrow(results%>%filter(param==0.25))
+rej_ar010 <- nrow(results%>%filter((param>9 & param < 11) & rej_ar0 == 1))/nrow(results%>%filter(param>9 & param < 11))
+rej_ar0100 <- nrow(results%>%filter(param==100 & rej_ar0 == 1))/nrow(results%>%filter(param==100))
+
+print(rbind(rej_ar00,rej_ar025,rej_ar010,rej_ar0100))
+
+```
+AR test rejection probability does not vary with $\pi$ or $\pi_n$, while t-test rejection probabilities vary with $\pi_n$.
+
+
+
