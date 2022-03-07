@@ -1,0 +1,126 @@
+---
+title: "Pset2_2"
+output: pdf_document
+---
+(a)-(d)
+```{r}
+#install.packages('hdm')
+library(hdm)
+library(tidyverse)
+data <-  BLP$BLP
+```
+
+(e)
+```{r}
+X <- data.frame(data$price,data$hpwt,data$air,data$mpd,data$space)
+X <- cbind(rep(1,nrow(X)),X)
+colnames(X) <- c('cons','price','hpwt','air','mpd','space')
+X <- as.matrix(X)
+```
+
+(f)
+```{r}
+Y <- data.frame(log(data$share) - log(data$outshr))
+Y <- as.matrix(Y)
+```
+
+(g)-(h)
+$\beta_{ols} = (X'X)^{-1}X'Y$
+```{r}
+ols <- solve(t(X)%*%X)%*%t(X)%*%Y
+ols[2]
+```
+The estimate is negative, indicating price is negatively correlated with the difference in Log Predicted Market Shares. This is intuitive as the higher a price is, the less likely consumers will be willing to pay for the higher price, and hence the smaller the market share.
+
+(i)
+OLS assumes the error term is uncorrelated with the covariates, while unobservable error terms affecting market share differences can be very likely correlated with the covariates like price. For example, in developing countries luxury goods will have a smaller market share due to lower purchasing power of the consumers, which can also lead to firms executing lower prices in developing countries.
+
+(j)-(k)
+```{r}
+data <- cbind(rep(1,nrow(data)),data)
+colnames(data)[1] <- 'cons'
+
+Z0 <- function(i,j,k,t){
+  firm_it <- data%>%filter(firm.id ==i & trend == t & id != j)%>%
+    select(cons, hpwt, air, mpd, space)
+  z <- sum(firm_it[,k])
+  return(z)
+}
+
+Z1 <- function(i,j,k,t){
+  firm_it <- data%>%filter(firm.id !=i & trend == t)%>%
+    select(cons, hpwt, air, mpd, space,firm.id)
+  set_firm <- unique(firm_it$firm.id)
+  z1 <- 0
+  for(f in set_firm){
+    firm_f <- firm_it%>%filter(firm.id == f)
+    sum1 <- sum(firm_f[,k])
+    z1 <- z1 + sum1
+  }
+  return(z1)
+}
+```
+
+```{r}
+Z <- data.frame(matrix(ncol = 10, nrow = 0))
+colnames(Z) <- c('z01','z02','z03','z04','z05',
+                 'z11','z12','z13','z14','z15')
+
+for(n in 1:nrow(data)){
+  row <- data[n,]
+  i <- row$firm.id
+  t <- row$trend
+  j <- row$id
+  firm_it <- data%>%filter(firm.id ==i & trend == t)
+  
+  z0 <- data.frame(matrix(ncol = 0, nrow = 1))
+  for(k in 1:5){
+    z_k <- data.frame(Z0(i,j,k,t))
+    z0 <- cbind(z0,z_k)
+  }
+  colnames(z0) <- c('z01','z02','z03','z04','z05')
+  
+  z1 <- data.frame(matrix(ncol = 0, nrow = 1))
+  for(k in 1:5){
+    z_k <- data.frame(Z1(i,j,k,t))
+    z1 <- cbind(z1,z_k)
+  }
+  colnames(z1) <- c('z11','z12','z13','z14','z15')
+
+  zcol <- cbind(z0,z1)
+  Z <- rbind(Z,zcol)
+}
+
+Z_full <- data%>%select(cons, hpwt, air, mpd, space)
+Z_full <- cbind(Z_full,Z)
+```
+
+(l)
+$\beta_{2SLS} = (X'P_zX)^{-1}X'P_zY$
+```{r}
+Z_full <- as.matrix(Z_full)
+Pz <- Z_full%*%solve(t(Z_full)%*%Z_full)%*%t(Z_full)
+tsls <- solve(t(X)%*%Pz%*%X)%*%t(X)%*%Pz%*%Y
+```
+
+(m)
+```{r}
+tsls[2]
+```
+Similar to the OLS estimate, the coefficient is still negative, indicating price is negatively correlated with difference in market shares. It is even smaller than the OLS estimate, suggesting the negative effect of price on market share differences is larger compared to what OLS indicates. 
+
+Hypothesis testing:
+```{r}
+#assuming homoskedasity
+uhat <- Y- X%*%tsls
+colnames(uhat) <- 'uhat'
+uhat <- as.vector(uhat)
+sigma_hat <- (t(uhat) %*% uhat)/nrow(data)
+sigma_hat <- sigma_hat[1,]
+vhom <- nrow(data) * as.numeric(t(uhat) %*% uhat) * solve((t(X) %*% Pz%*%X))
+vhom <- vhom[2,2]
+
+t_stat <- abs(sqrt(nrow(data))*(tsls[2] - ols[2])/sqrt(vhom))
+t_stat > qnorm(0.975)
+```
+Under homoskedasticity, the 2SLS estimator is not significantly different from the OLS estimator at 95% significance level. 
