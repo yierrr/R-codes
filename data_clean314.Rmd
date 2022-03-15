@@ -1,0 +1,433 @@
+---
+title: "Prelim_thesis"
+output: html_document
+---
+```{r}
+# functions
+get_race_count <- function(data,m,name){
+  #data <- read.csv(files[3])
+    data <- data[,c(2,5,6,7,8,9,10,12,13,15)]
+    colnames(data) <- c('date','lat','lon','gender',
+                        'age','selfeth','offeth','object',
+                        'outcome','remover')
+    
+    data <- data%>%mutate(date =substr(date,1,10))%>%filter(substr(selfeth,1,5)==offeth)%>%
+      mutate(is_chn = ifelse((grepl('Chinese',selfeth)&
+                                grepl('Asian',offeth)),1,0))%>%
+      mutate(is_east_asian = ifelse((grepl('Asian',selfeth) &
+                                       !grepl('Indian',selfeth) &
+                                       !grepl('Pakistani',selfeth) &
+                                       !grepl('Bangla',selfeth) &
+                                       grepl('Asian',offeth)),1,0))%>%
+        mutate(is_asian = ifelse((grepl('Asian',selfeth)&
+                                    grepl('Asian',offeth)),1,0))
+  
+        
+        
+      
+      chn <- count(data%>%group_by(is_chn))%>%filter(is_chn==1)
+      n1 = chn$n[1]
+      
+      nchn <- count(data%>%group_by(is_chn))%>%filter(is_chn==0)
+      n2 = nchn$n[1]
+      
+      ea <- count(data%>%group_by(is_east_asian))%>%filter(is_east_asian==1)
+      n3 = ea$n[1]
+      
+      nea <- count(data%>%group_by(is_east_asian))%>%filter(is_east_asian==0)
+      n4 = nea$n[1]
+      
+      a <- count(data%>%group_by(is_asian))%>%filter(is_asian==1)
+      n5 = a$n[1]
+      
+      na <- count(data%>%group_by(is_asian))%>%filter(is_asian==0)
+      n6 = na$n[1]
+      
+      return(c(m,get_name(name),n1,n2,n3,n4,n5,n6))
+}
+
+get_name <- function(string){
+  vec <- sapply(strsplit(string, "-"), "[",3:7)
+  stop <- to_vec(for(i in 1:length(vec)) if(grepl("stop",vec[i])) i)[1]
+  if(stop == 2){name <- vec[1]}else{
+    name <- paste(c(vec[1:stop-1]),collapse = '-')
+  }
+  return(name)
+}
+
+get_pop <- function(pfa,eth,t){
+  d <- pop%>%filter(Geography == pfa & Ethnicity == eth 
+                    & (Sex == 'Male'|Sex == 'Female') &
+                      Time == t)
+  psex <- unique(d$population)
+  p <- sum(psex)
+  return(p)
+}
+
+```
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(comprehenr)
+library(stargazer)
+library(psych) 
+library(hash)
+#data loading and cleaning (no covariates)
+###2019
+jan <-  "~/stop and search 19-21/2019-01"
+newsum19 <- data.frame(matrix(nrow=0,ncol=8))
+colnames(newsum19) <- c('month','pfa','chn','not-chn','east-asian','not-ea','asian','na')
+
+for(m in 1:12){
+  if(m<10){mon = paste('0',as.character(m),sep='')}else{mon = m}
+  path <- paste(substr(jan,1,nchar(jan)-2),mon,sep='')
+  setwd(path)
+  files <- to_vec(for(f in (list.files(getwd()))) if(substr(f,nchar(f)-2,nchar(f))=='csv') f)
+  for(f in files){
+    data <- read_csv(f)
+    row <- get_race_count(data,m,f)
+    newsum19 <- rbind(newsum19,row)
+    colnames(newsum19) <- c('month','pfa','chn','not-chn','east-asian','not-ea','asian','na')
+  }
+}
+
+###2020
+jan <-  "~/stop and search 19-21/2020-01"
+newsum20 <- data.frame(matrix(nrow=0,ncol=8))
+colnames(newsum20) <- c('month','pfa','chn','not-chn','east-asian','not-ea','asian','na')
+
+for(m in 1:12){
+  if(m<10){mon = paste('0',as.character(m),sep='')}else{mon = m}
+  path <- paste(substr(jan,1,nchar(jan)-2),mon,sep='')
+  setwd(path)
+  files <- to_vec(for(f in (list.files(getwd()))) if(substr(f,nchar(f)-2,nchar(f))=='csv') f)
+  for(f in files){
+    data <- read_csv(f)
+    row <- get_race_count(data,m,f)
+    newsum20 <- rbind(newsum20,row)
+    colnames(newsum20) <- c('month','pfa','chn','not-chn','east-asian','not-ea','asian','na')
+  }
+}
+
+####combine and clean
+newsum19 <- newsum19%>%filter(!is.na(`not-chn`))
+newsum19 <- newsum19%>%mutate(year=2019)
+newsum20 <- newsum20%>%filter(!is.na(`not-chn`))
+newsum20 <- newsum20%>%mutate(year=2020)
+
+newsum <- rbind(newsum19,newsum20)
+newsum[is.na(newsum)] <- 0
+newsum%>%mutate(covid = ifelse(year==2020, 1, 0))
+
+###combine population and percentage
+setwd('~/police')
+pop <- read_csv("police-workforce-2017-to-2020.csv" )
+pop <- pop%>%select(Time,Ethnicity,Geography,Sex,`Population by ethnicity, gender, and PFA (based on 2011 Census)`)%>%
+  filter(Geography != "All - including BTP" & Geography != "All - excluding BTP" & 
+           Geography != "British Transport Police" & (Time == 2019 | Time == 2020))%>%
+  mutate(Geography = gsub(' ','-',gsub('&','and',tolower(Geography))))
+colnames(pop) <- c(colnames(pop)[1:4],'population')
+pop <- pop%>%mutate(population = as.numeric(gsub(',','',population)))
+
+popu <- data.frame(matrix(nrow=0,ncol=length(unique(pop$Ethnicity))+2))
+for(t in 2019:2020){
+  for(p in unique(newsum$pfa)){
+    row <- cbind(p,t)
+    for(e in unique(pop$Ethnicity)){
+      if(grepl('city',p) & grepl('london',p)){p <- "london,-city-of"}
+      if(grepl('metropolitan',p)){p <- "metropolitan-police"}
+      ppl <- get_pop(p,e,t)
+      row <- cbind(row,ppl)
+    }
+    popu <- rbind(popu,row)
+  }
+}
+colnames(popu) <- c('pfa','year',unique(pop$Ethnicity))
+popu <- popu[,-7]
+
+newsum <- merge(newsum,popu,by=c('pfa','year'))
+newsum1 <- newsum%>%mutate(chn = as.numeric(chn)/as.numeric(`Other inc Chinese`))%>%
+        mutate(`not-chn` = as.numeric(`not-chn`)/(as.numeric(All) - as.numeric(`Other inc Chinese`)))%>%
+  mutate(`east-asian` = as.numeric(`east-asian`)/as.numeric(`Other inc Chinese`))%>%
+  mutate(`not-ea` = as.numeric(`not-ea`)/(as.numeric(All)-as.numeric(`Other inc Chinese`)))%>%
+  mutate(asian = as.numeric(asian)/as.numeric(Asian))%>%
+  mutate(na = as.numeric(na)/(as.numeric(All)-as.numeric(Asian)))
+
+write.csv(newsum1, file="newsum_per.csv")
+```
+
+```{r}
+####### merge police proportion: 2020 data
+#list.files(getwd())
+poli <- read_csv("by-ethnicity-and-area-police-officers.csv")
+
+colnames(poli)
+poli <- poli%>%filter(Geography != "All - including BTP" & Geography != "All - excluding BTP" & 
+           Geography != "British Transport Police")%>%
+  mutate(Geography = gsub(' ','-',gsub('&','and',tolower(Geography))))%>%
+  mutate(year=2020)
+colnames(poli) <- c('eth','geo','per','popu','num','yr')
+
+propoli <- data.frame(matrix(nrow=0,ncol=3))
+for(p in newsum$pfa){
+  pp <- p
+  if(grepl('city',p) & grepl('london',p)){pp <- "london,-city-of"}
+  if(grepl('metropolitan',p)){pp <- "metropolitan-police"}
+  dp <- poli%>%filter(geo==pp)%>%select(eth,per)
+  asi <- dp%>%filter(eth == 'Asian')
+  asi <- asi$per[1]
+  bsi <- dp%>%filter(eth == 'Other inc Chinese')
+  bsi <- bsi$per[1]
+  row <- c(p,bsi,asi)
+  propoli <- rbind(propoli,row)
+}
+colnames(propoli) <- c('pfa','ea_poli','asian_poli')
+
+propoli <- propoli[,1:3]
+propoli <- propoli%>%mutate(has_ea=ifelse(as.numeric(ea_poli)>0,1,0))
+newsum2 <- cbind(newsum1,propoli)
+
+newsum2 <- newsum2[,-16]
+data1 <- newsum2%>%select(asian,year,has_a,month,pfa)
+data2 <- newsum2%>%select(`na`,year,has_a,month,pfa)
+
+colnames(data1) <- c('stops','year','has_a','mon','pfa')
+colnames(data2) <- c('stops','year','has_a','mon','pfa')
+
+data1 <- data1%>%mutate(is_a = 1)
+data2 <- data2%>%mutate(is_a = 0)
+dtaa <- rbind(data1,data2)
+
+dtaa <- dtaa%>%mutate(covid = year-2019)
+colnames(dtaa)
+```
+
+```{r}
+colnames(dtaa) <- c("Searches (proportion in ethinicity)","Year",
+                    "Has Asian Police",'mon','pfa',"Asian Searchee",
+                    "After Covid")
+didreg <- lm(stops~is_a*has_a*covid,dtaa)
+summary(didreg)
+lm(stops~is_a*has_a*covid,dtaa)
+lm(stops~is_a*has_a*covid,dtaa)
+
+stargazer(didreg,
+          coef = list(as.vector(didreg$coefficients)),
+          title="lm Regression", type="text",
+          column.labels = "Propotion of ethnicity searched",
+          covariate.labels = c("Asian Searchee", "Has Asian Police",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+
+dtaa$`Searches (proportion in ethinicity)` <- 10000*dtaa$`Searches (proportion in ethinicity)`
+
+didreg1k <- lm(`Searches (proportion in ethinicity)`~`Asian Searchee`*`Has Asian Police`*`After Covid`,dtaa)
+stargazer(didreg1k,
+          coef = list(as.vector(didreg1k$coefficients)),
+          title="lm Regression (scaled)", type="latex",
+          covariate.labels = c("Asian Searchee", "Has Asian Police",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+
+```
+
+```{r}
+# manual reg
+Xmat <- dtaa%>%select(`Has Asian Police`,`Asian Searchee`,`After Covid`)
+Xmat$`Has Asian Police×Asian Searchee` <- Xmat$`Has Asian Police`*Xmat$`Asian Searchee`
+Xmat$`After Covid×Asian Searchee` <- Xmat$`After Covid`*Xmat$`Asian Searchee`
+Xmat$`Has Asian Police×After Covid` <- Xmat$`Has Asian Police`*Xmat$`After Covid`
+Xmat$`Has Asian Police×After Covid×Asian Searchee` <- Xmat$`Has Asian Police`*Xmat$`After Covid`*Xmat$`Asian Searchee`
+cons <- rep(1,nrow(Xmat))
+```
+
+```{r}
+#normal OLS
+Xmat <- cbind(cons,Xmat)
+X <- as.matrix(Xmat)
+Y <- as.matrix(dtaa$`Searches (proportion in ethinicity)`)
+
+beta1 <- solve(t(X)%*%X)%*%t(X)%*%Y
+uhat <- Y-X%*%beta1
+homo <- ((t(uhat)%*%uhat)/(nrow(uhat)-nrow(beta)))
+vcov <- solve(t(X)%*%X)%*%t(X)%*%(homo[1]*diag(nrow(uhat)))%*%X%*%solve(t(X)%*%X)
+se <- sqrt(diag(vcov))
+
+fake <- lm(`Searches (proportion in ethinicity)`~`Asian Searchee`*`Has Asian Police`*`After Covid`,dtaa)
+stargazer(fake,
+          coef = list(as.vector(beta)),
+          title="lm Regression (scaled; Manual)", type="latex",
+          se=list(as.vector(se)),
+          covariate.labels = c( "Has Asian Police","Asian Searchee",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+
+#HC0
+hetdiag <- uhat*uhat
+vcov <- solve(t(X)%*%X)%*%t(X)%*%(diag(c(hetdiag)))%*%X%*%solve(t(X)%*%X)
+se <- sqrt(diag(vcov))
+
+fake <- lm(`Searches (proportion in ethinicity)`~`Asian Searchee`*`Has Asian Police`*`After Covid`,dtaa)
+stargazer(fake,
+          coef = list(as.vector(beta)),
+          title="lm Regression (scaled; Manual HC0)", type="latex",
+          se=list(as.vector(se)),
+          covariate.labels = c( "Has Asian Police","Asian Searchee",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+
+#HC1
+hetdiag <- uhat*uhat
+vcov <- solve(t(X)%*%X)%*%t(X)%*%(diag(c(hetdiag)))%*%X%*%solve(t(X)%*%X)
+vcov <- (nrow(uhat)/(nrow(uhat)-nrow(beta)))*vcov
+se <- sqrt(diag(vcov))
+
+fake <- lm(`Searches (proportion in ethinicity)`~`Asian Searchee`*`Has Asian Police`*`After Covid`,dtaa)
+stargazer(fake,
+          coef = list(as.vector(beta)),
+          title="lm Regression (scaled; Manual HC1)", type="latex",
+          se=list(as.vector(se)),
+          covariate.labels = c( "Has Asian Police","Asian Searchee",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+
+#cluster-time
+hetdiag <- uhat*uhat
+Xmatp <- cbind(Xmat,uhat,dtaa$mon,dtaa$pfa)
+colnames(Xmatp) <- c(colnames(Xmatp)[1:9],'mon','pfa')
+
+G <- as.matrix(diag(rep(0,8)))
+for(m in 1:12){
+  u1 <- Xmatp%>%filter(mon==m)%>%select(uhat)
+  X1 <- as.matrix(Xmatp%>%filter(mon==m)%>%select('cons',"Has Asian Police","Asian Searchee",
+                                 "After Covid",`Has Asian Police×Asian Searchee` ,
+                                 `After Covid×Asian Searchee`,`Has Asian Police×After Covid`,
+                                 `Has Asian Police×After Covid×Asian Searchee`))
+  vv <- as.matrix(u1)%*%t(as.matrix(u1))
+  G <- G+t(X1)%*%vv%*%X1
+}
+
+
+vcov <- solve(t(X)%*%X)%*%G%*%solve(t(X)%*%X)
+#vcov <- (12/11)*(nrow(uhat)/(nrow(uhat)-nrow(beta)))*vcov (correction)
+se1 <- sqrt(diag(vcov))
+
+fake <- lm(`Searches (proportion in ethinicity)`~`Asian Searchee`*`Has Asian Police`*`After Covid`,dtaa)
+stargazer(fake,
+          coef = list(as.vector(beta1)),
+          title="Regression (scaled; Manual Time Cluster - Stata small cluster correction)", type="text",
+          se=list(as.vector(se1)),
+          covariate.labels = c( "Has Asian Police","Asian Searchee",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+
+#cluster-region
+dct <- hash()
+dct[['East of England']] <- to_vec(for(s in c('Bedfordshire', 'Cambridgeshire', 'Essex', 'Hertfordshire', 'Norfolk','Suffolk')) sub(' ','-',tolower(s)))
+
+dct[['North East']] <- to_vec(for(s in c('Durham','Tyne-and-Wear','Northumberland',"northumbria")) sub(' ','-',tolower(s)))
+dct[['South West']] <- to_vec(for(s in c('Bristol','Cornwall','Dorset','Devon','Gloucestershire',
+                                         'Avon-and-Somerset', 'Wiltshire',"devon-and-cornwall")) sub(' ','-',sub(' ','-',tolower(s))))
+dct[['East Midlands']] <- to_vec(for(s in c('Derbyshire','Leicestershire','Lincolnshire', 'Northamptonshire', 'Nottinghamshire','Rutland')) sub(' ','-',tolower(s)))
+dct[['North West']] <- to_vec(for(s in c('Cheshire','Cumbria','Greater-Manchester','Lancashire','Merseyside')) sub(' ','-',tolower(s)))
+dct[['West Midlands']] <- to_vec(for(s in c('Herefordshire','Shropshire','Staffordshire','Warwickshire','West-Midlands','Worcestershire',"west-mercia")) sub(' ','-',tolower(s)))
+dct[['South East']] <- to_vec(for(s in c('Buckinghamshire','Sussex','Hampshire','Kent','Oxfordshire','Berkshire', 'Surrey','West-Sussex',"thames-valley")) sub(' ','-',tolower(s)))
+dct[['Yorkshire and the Humber']] <- to_vec(for(s in c('Leeds','Sheffield','Bradford','Hull',
+                                                       'York',"south-yorkshire","north-yorkshire","west-yorkshire",
+                                                       'cleveland',"humberside")) sub(' ','-',tolower(s)))
+dct[['wales']] <- c("dyfed-powys","gwent","north-wales","south-wales")
+dct[['london']] <- c("metropolitan","city-of-london")
+vals <- to_vec(for(k in keys(dct)) dct[[k]])
+to_vec(for(p in unique(dtaa$pfa)) if(!(p %in% vals)) p) #expect NULL
+
+hetdiag <- uhat*uhat
+Xmatp <- cbind(Xmat,uhat,dtaa$mon,dtaa$pfa)
+colnames(Xmatp) <- c(colnames(Xmatp)[1:9],'mon','pfa')
+
+G <- as.matrix(diag(rep(0,8)))
+for(k in keys(dct)){
+  val <- to_vec(for(p in unique(dtaa$pfa)) if(p %in% dct[[k]]) p)
+  for(v in val){
+      u1 <- Xmatp%>%filter(pfa==v)%>%select(uhat)
+      X1 <- as.matrix(Xmatp%>%filter(pfa==v)%>%select('cons',"Has Asian Police","Asian Searchee",
+                                     "After Covid",`Has Asian Police×Asian Searchee` ,
+                                     `After Covid×Asian Searchee`,`Has Asian Police×After Covid`,
+                                     `Has Asian Police×After Covid×Asian Searchee`))
+      vv <- as.matrix(u1)%*%t(as.matrix(u1))
+      G <- G+t(X1)%*%vv%*%X1
+  }
+
+}
+
+vcov <- solve(t(X)%*%X)%*%G%*%solve(t(X)%*%X)
+#vcov <- (10/9)*(nrow(uhat)/(nrow(uhat)-nrow(beta1)))*vcov (correction)
+se1 <- sqrt(diag(vcov))
+
+fake <- lm(`Searches (proportion in ethinicity)`~`Asian Searchee`*`Has Asian Police`*`After Covid`,dtaa)
+stargazer(fake,
+          coef = list(as.vector(beta1)),
+          title="lm Regression (scaled; Manual Region Cluster - Stata small cluster correction)", type="latex",
+          se=list(as.vector(se1)),
+          covariate.labels = c( "Has Asian Police","Asian Searchee",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+```
+
+```{r}
+#time*region cluster
+#cluster-region
+hetdiag <- uhat*uhat
+Xmatp <- cbind(Xmat,uhat,dtaa$mon,dtaa$pfa)
+colnames(Xmatp) <- c(colnames(Xmatp)[1:9],'mon','pfa')
+
+G <- as.matrix(diag(rep(0,8)))
+for(k in keys(dct)){
+  val <- to_vec(for(p in unique(dtaa$pfa)) if(p %in% dct[[k]]) p)
+  for(v in val){
+      for(m in 1:12){
+        u1 <- Xmatp%>%filter(pfa==v & mon == m)%>%select(uhat)
+        X1 <- as.matrix(Xmatp%>%filter(pfa==v& mon == m)%>%select('cons',"Has Asian Police","Asian Searchee",
+                                       "After Covid",`Has Asian Police×Asian Searchee` ,
+                                       `After Covid×Asian Searchee`,`Has Asian Police×After Covid`,
+                                       `Has Asian Police×After Covid×Asian Searchee`))
+        vv <- as.matrix(u1)%*%t(as.matrix(u1))
+        G <- G+t(X1)%*%vv%*%X1
+      }
+  }
+
+}
+
+vcov <- solve(t(X)%*%X)%*%G%*%solve(t(X)%*%X)
+#vcov <- (108/107)*(nrow(uhat)/(nrow(uhat)-nrow(beta1)))*vcov (correction)
+se1 <- sqrt(diag(vcov))
+
+fake <- lm(`Searches (proportion in ethinicity)`~`Asian Searchee`*`Has Asian Police`*`After Covid`,dtaa)
+stargazer(fake,
+          coef = list(as.vector(beta1)),
+          title="lm Regression (scaled; Manual Region×Time Cluster - Stata small cluster correction)", type="latex",
+          se=list(as.vector(se1)),
+          covariate.labels = c( "Has Asian Police","Asian Searchee",
+                               "After Covid","Asian Searchee×Has Asian Police",
+                               "Asian Searchee×After Covid","After Covid×Has Asian Police",
+                               "Asian Searchee×Has Asian Police×After Covid","constant"),
+          df=FALSE, digits=1)
+
+```
+
+
+
