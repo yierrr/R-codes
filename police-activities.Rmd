@@ -151,8 +151,8 @@ newsum1 <- newsum%>%mutate(chn = as.numeric(chn)/as.numeric(`Other inc Chinese`)
         mutate(`not-chn` = as.numeric(`not-chn`)/(as.numeric(All) - as.numeric(`Other inc Chinese`)))%>%
   mutate(`east-asian` = as.numeric(`east-asian`)/as.numeric(`Other inc Chinese`))%>%
   mutate(`not-ea` = as.numeric(`not-ea`)/(as.numeric(All)-as.numeric(`Other inc Chinese`)))%>%
-  mutate(asian = as.numeric(asian)/as.numeric(Asian))%>%
-  mutate(na = as.numeric(na)/(as.numeric(All)-as.numeric(Asian)))
+  mutate(asian = as.numeric(asian)/(as.numeric(Asian)+as.numeric(`Other inc Chinese`)))%>%
+  mutate(na = as.numeric(na)/(as.numeric(All)-as.numeric(Asian)-as.numeric(`Other inc Chinese`)))
 
 write.csv(newsum1, file="newsum_per.csv")
 ```
