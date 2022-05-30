@@ -1,5 +1,5 @@
 # R-codes
-Codes written in R (that are still in my laptop; some other projects may have been deleted).
+Codes written in R (that survived my ruthless anxiety-easing R deletion frenzy).
 
 
 <p align="center">
